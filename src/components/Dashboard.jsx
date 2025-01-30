@@ -1,61 +1,88 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useState, useMemo } from 'react';
 import { useDispatch, useSelector } from 'react-redux';
 import {
   useGetUsersQuery,
   useGetSalesQuery,
   useGetInventoryQuery,
 } from '../store/api';
-import {
-  setUserCount,
-  setTotalSales,
-  setTotalItems,
-} from '../store/slices/statsSlice';
+
+import { setUser } from '../store/slices/userSlice';
+import { setSales } from '../store/slices/salesSlice';
+import { setInventory } from '../store/slices/inventorySlice';
+
+import { selectUserCount, selectTotalSales, selectTotalItems, selectMostPopularModels, selectLast5DaysSalesData} from '../store/selectors/statsSelector';
+
+import Card from './Card';
+import LineChart from './LineChart';
+import { getLineChartOptions, getMixedLineBarChartOptions } from './chartOptions';
+import MixedLineBarChart from './MixedLineBarChart';
+import { RETRY_DELAY, UPDATE_INTERVAL } from '../../config';
 
 const Dashboard = () => {
   const dispatch = useDispatch();
+  const [userPollingInterval, setUserPollingInterval] = useState(UPDATE_INTERVAL);
+  const [salesPollingInterval, setSalesPollingInterval] = useState(UPDATE_INTERVAL);
+  const [inventoryPollingInterval, setInventoryPollingInterval] = useState(UPDATE_INTERVAL);
 
-  // 使用 RTK Query 獲取數據，並設置 pollingInterval 實現週期性更新
-  const { data: users } = useGetUsersQuery(undefined, { pollingInterval: 10000 }); // 每 5 秒更新一次
-  const { data: sales } = useGetSalesQuery(undefined, { pollingInterval: 10000 });
-  const { data: inventory } = useGetInventoryQuery(undefined, {
-    pollingInterval: 10000,
-  });
+  const { data: users, error: userError } = useGetUsersQuery(undefined, { pollingInterval: userPollingInterval });
+  const { data: sales, error: salesError } = useGetSalesQuery(undefined, { pollingInterval: salesPollingInterval });
+  const { data: inventory, error: inventoryError } = useGetInventoryQuery(undefined, { pollingInterval: inventoryPollingInterval });
 
-  const { userCount, totalSales, totalItems } = useSelector(
-    (state) => state.stats
-  );
-
-
+  // State to track the last successful update time for each API call
+  const [lastUserUpdate, setLastUserUpdate] = useState(null);
+  const [lastSalesUpdate, setLastSalesUpdate] = useState(null);
+  const [lastInventoryUpdate, setLastInventoryUpdate] = useState(null);
   useEffect(() => {
     if (users) {
-      dispatch(setUserCount(users.length));
+      dispatch(setUser(users));
+      setLastUserUpdate(new Date());
+      setUserPollingInterval(UPDATE_INTERVAL);
+    } else if (userError) {
+      setUserPollingInterval(RETRY_DELAY);
     }
-  }, [users, dispatch]);
+  }, [users, userError, dispatch]);
 
   useEffect(() => {
     if (sales) {
-      dispatch(setTotalSales(sales.length));
+      dispatch(setSales(sales));
+      setLastSalesUpdate(new Date());
+      setSalesPollingInterval(UPDATE_INTERVAL);
+    } else if (salesError) {
+      setSalesPollingInterval(RETRY_DELAY);
     }
-  }, [sales, dispatch]);
+  }, [sales, salesError, dispatch]);
 
   useEffect(() => {
     if (inventory) {
-      let inStockTotal = 0
-      for (const item of inventory) {
-        if (item.status == "in-stock") {
-            inStockTotal += 1;
-              }
-            }
-      dispatch(setTotalItems(inStockTotal));
+      dispatch(setInventory(inventory));
+      setLastInventoryUpdate(new Date());
+      setInventoryPollingInterval(UPDATE_INTERVAL);
+    } else if (inventoryError) {
+      setInventoryPollingInterval(RETRY_DELAY);
     }
-  }, [inventory, dispatch]);
+  }, [inventory, inventoryError, dispatch]);
 
+  const lineChartOption = useMemo(() => getLineChartOptions(), []);
+  
+  const userCount = useSelector(selectUserCount);
+  const totalSales = useSelector(selectTotalSales);
+  const totalItems = useSelector(selectTotalItems);
+  const mostPopularModels = useSelector(selectMostPopularModels);
+  const last5DaysSalesData = useSelector(selectLast5DaysSalesData);
   return (
     <div>
       <h1>Dashboard</h1>
-      <p>User Count: {userCount}</p>
-      <p>Total Sales: {totalSales}</p>
-      <p>Total Items: {totalItems}</p>
+      <div>
+        <p>Last User Update: {lastUserUpdate ? lastUserUpdate.toLocaleString() : 'No data yet'}</p>
+        <p>Last Sales Update: {lastSalesUpdate ? lastSalesUpdate.toLocaleString() : 'No data yet'}</p>
+        <p>Last Inventory Update: {lastInventoryUpdate ? lastInventoryUpdate.toLocaleString() : 'No data yet'}</p>
+      </div>
+      <Card title="Users" value={userCount} />
+      <Card title="Total Sales" value={totalSales} />
+      <Card title="Total Items in Stock" value={totalItems} />
+      <LineChart option={lineChartOption}/>
+    
+        {/* <MixedLineBarChart option={(getMixedLineBarChartOptions())}/>   */}
     </div>
   );
 };
